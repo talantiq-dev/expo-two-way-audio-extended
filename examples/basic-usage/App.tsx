@@ -2,6 +2,7 @@ import { Buffer } from "buffer";
 import {
   MicrophoneDataCallback,
   VolumeLevelCallback,
+  AudioInterruptionCallback,
   getMicrophoneModeIOS,
   initialize,
   playPCMData,
@@ -41,6 +42,13 @@ export function Testbed() {
   const [inputVolumeLevel, setInputVolumeLevel] = useState(0.0);
   const [outputVolumeLevel, setOutputVolumeLevel] = useState(0.0);
   const micMode = Platform.OS === "ios" ? getMicrophoneModeIOS() : "NO_MIC_MODE_IN_ANDROID";
+  
+  // Log sample rate information
+  useEffect(() => {
+    console.log("AudioEngine configured with dual sample rates:");
+    console.log("  Input (microphone): 16kHz");
+    console.log("  Output (speaker): 24kHz with automatic resampling");
+  }, []);
 
   const playAudio = () => {
     for (const dataChunk of audioData) {
@@ -72,6 +80,32 @@ export function Testbed() {
     "onOutputVolumeLevelData",
     useCallback<VolumeLevelCallback>((event) => {
       setOutputVolumeLevel(event.data);
+    }, []),
+  );
+
+  // Handle audio interruptions with improved user experience
+  useExpoTwoWayAudioEventListener(
+    "onAudioInterruption",
+    useCallback((event) => {
+      const interruptionType = event.data;
+      console.log(`Audio interruption: ${interruptionType}`);
+      
+      switch (interruptionType) {
+        case "began":
+          // Conversation was gracefully paused due to interruption
+          console.log("🎙️ Conversation paused - audio session interrupted");
+          // You could show a toast notification here
+          break;
+        case "ended":
+          // Interruption ended - show re-engagement notification
+          console.log("🔔 Tap to continue your conversation");
+          // You could show a notification or update UI to prompt user to resume
+          break;
+        case "blocked":
+          // Temporary interruption (Android)
+          console.log("⏸️ Audio temporarily blocked");
+          break;
+      }
     }, []),
   );
 

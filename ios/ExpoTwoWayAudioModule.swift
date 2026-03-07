@@ -5,6 +5,7 @@ let ON_INPUT_VOLUME_LEVEL_EVENT_NAME = "onInputVolumeLevelData"
 let ON_OUTPUT_VOLUME_LEVEL_EVENT_NAME = "onOutputVolumeLevelData"
 let ON_RECORDING_CHANGE_EVENT_NAME = "onRecordingChange"
 let ON_AUDIO_INTERRUPTION_EVENT_NAME = "onAudioInterruption"
+let ON_RAW_AUDIO_LEVEL_EVENT_NAME = "onRawAudioLevel"
 
 public class ExpoTwoWayAudioModule: Module {
     private var audioEngine: AudioEngine?
@@ -32,6 +33,7 @@ public class ExpoTwoWayAudioModule: Module {
                 self.setupInputAudioLevelCallback()
                 self.setupOutputAudioLevelCallback()
                 self.setupAudioInterruptionCallback()
+                self.setupRawAudioLevelCallback()
                 return true
             } catch {
                 print("Failed to initialize AudioEngine: \(error)")
@@ -117,6 +119,10 @@ public class ExpoTwoWayAudioModule: Module {
         Function("isPlaying") { () -> Bool in
             return self.audioEngine?.isPlaying ?? false
         }
+        
+        Function("clearAudioQueue") {
+            self.audioEngine?.clearAudioQueue()
+        }
 
         AsyncFunction("getMicrophonePermissionsAsync") { (promise: Promise) in
             EXPermissionsMethodsDelegate.getPermissionWithPermissionsManager(
@@ -143,6 +149,7 @@ public class ExpoTwoWayAudioModule: Module {
             ON_OUTPUT_VOLUME_LEVEL_EVENT_NAME,
             ON_RECORDING_CHANGE_EVENT_NAME,
             ON_AUDIO_INTERRUPTION_EVENT_NAME,
+            ON_RAW_AUDIO_LEVEL_EVENT_NAME,
         ])
     }
 
@@ -187,6 +194,16 @@ public class ExpoTwoWayAudioModule: Module {
                 ON_RECORDING_CHANGE_EVENT_NAME,
                 [
                     "data": self?.audioEngine?.isRecording
+                ])
+        }
+    }
+    
+    private func setupRawAudioLevelCallback() {
+        audioEngine?.onRawAudioLevelCallback = { [weak self] level in
+            self?.sendEvent(
+                ON_RAW_AUDIO_LEVEL_EVENT_NAME,
+                [
+                    "data": level
                 ])
         }
     }

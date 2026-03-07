@@ -21,7 +21,8 @@ import kotlin.math.pow
 
 
 class AudioEngine (context: Context) {
-    private val SAMPLE_RATE = 16000
+    private val INPUT_SAMPLE_RATE = 16000
+    private val OUTPUT_SAMPLE_RATE = 24000
     private val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
     private val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
 
@@ -45,6 +46,7 @@ class AudioEngine (context: Context) {
     var onInputVolumeCallback: ((Float) -> Unit)? = null
     var onOutputVolumeCallback: ((Float) -> Unit)? = null
     var onAudioInterruptionCallback: ((String) -> Unit)? = null
+    var onRawAudioLevelCallback: ((Float) -> Unit)? = null
 
     init {
         initializeAudio(context)
@@ -52,6 +54,7 @@ class AudioEngine (context: Context) {
 
     @SuppressLint("NewApi")
     private fun initializeAudio(context:Context) {
+        Log.d("AudioEngine", "Initializing with dual sample rates: Input=${INPUT_SAMPLE_RATE}Hz, Output=${OUTPUT_SAMPLE_RATE}Hz")
         audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         requestAudioFocus()
@@ -73,11 +76,13 @@ class AudioEngine (context: Context) {
             }
         }, null)
 
-        val bufferSize = AudioTrack.getMinBufferSize(
-            SAMPLE_RATE,
+        val minBufferSize = AudioTrack.getMinBufferSize(
+            OUTPUT_SAMPLE_RATE,
             AudioFormat.CHANNEL_OUT_MONO,
             AUDIO_FORMAT
         )
+        // Use 2x minimum buffer size for better performance while maintaining low latency
+        val bufferSize = minBufferSize * 2
 
         audioTrack = AudioTrack(
             AudioAttributes.Builder()
@@ -86,7 +91,7 @@ class AudioEngine (context: Context) {
                 .build(),
             AudioFormat.Builder()
                 .setEncoding(AUDIO_FORMAT)
-                .setSampleRate(SAMPLE_RATE)
+                .setSampleRate(OUTPUT_SAMPLE_RATE)
                 .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                 .build(),
             bufferSize,
@@ -152,8 +157,23 @@ class AudioEngine (context: Context) {
                 .setOnAudioFocusChangeListener { focusChange ->
                     when (focusChange) {
                         AudioManager.AUDIOFOCUS_LOSS -> {
-                            Log.d("AudioEngine", "Audio focus lost")
-                            onAudioInterruptionCallback?.let { it("blocked") }
+                            Log.d("AudioEngine", "Audio focus lost - gracefully pausing conversation")
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                pauseConversation()
+                            }
+                            onAudioInterruptionCallback?.invoke("began")
+                        }
+                        AudioManager.AUDIOFOCUS_GAIN -> {
+                            Log.d("AudioEngine", "Audio focus gained - showing re-engagement notification")
+                            scheduleReEngagementNotification()
+                            onAudioInterruptionCallback?.invoke("ended")
+                        }
+                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                            Log.d("AudioEngine", "Audio focus lost temporarily - conversation paused")
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                pauseConversation()
+                            }
+                            onAudioInterruptionCallback?.invoke("blocked")
                         }
                     }
                 }
@@ -170,10 +190,12 @@ class AudioEngine (context: Context) {
     @RequiresApi(Build.VERSION_CODES.Q)
     @SuppressLint("MissingPermission")
     private fun startRecording(){
-        val bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
+        val minBufferSize = AudioRecord.getMinBufferSize(INPUT_SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
+        // Use 2x minimum buffer size for better performance while maintaining low latency
+        val bufferSize = minBufferSize * 2
         audioRecord = AudioRecord(
             MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-            SAMPLE_RATE,
+            INPUT_SAMPLE_RATE,
             CHANNEL_CONFIG,
             AUDIO_FORMAT,
             bufferSize
@@ -206,6 +228,7 @@ class AudioEngine (context: Context) {
 
     private fun startMicSampleTap(){
         executorServiceMicrophone.execute {
+            // Buffer size for ~32ms at 16kHz (1024 bytes = 512 samples = 32ms at 16kHz) - optimized for real-time AI
             val buffer = ByteArray(1024)
             try {
                 while (isRecording) {
@@ -214,6 +237,11 @@ class AudioEngine (context: Context) {
                         val data = buffer.copyOf(read)
                         val micVolume = calculateRMSLevel(data)
                         onInputVolumeCallback?.invoke(micVolume)
+                        
+                        // Calculate raw audio level for VAD
+                        val rawLevel = calculateRawAudioLevel(data)
+                        onRawAudioLevelCallback?.invoke(rawLevel)
+                        
                         onMicDataCallback?.invoke(data)
                     }
                 }
@@ -252,11 +280,15 @@ class AudioEngine (context: Context) {
     }
 
     fun playPCMData(data: ByteArray) {
+        // Assume incoming audio is 24kHz (matches output sample rate) - no resampling needed
+        // This is optimal for Gemini Live and other 24kHz audio sources
         audioSampleQueue.add(data)
         if (!isPlaying) {
             playAudioFromSampleQueue()
         }
     }
+    
+
 
     private fun playAudioFromSampleQueue() {
         executorServicePlayback.execute{
@@ -302,12 +334,35 @@ class AudioEngine (context: Context) {
         isRecording = toggleRecording(false)
         audioTrack.pause()
     }
+    
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun pauseConversation() {
+        // Gracefully pause the conversation
+        Log.d("AudioEngine", "Pausing conversation due to interruption")
+        pauseRecordingAndPlayer()
+        // Clear any pending audio to avoid confusion when resuming
+        clearAudioQueue()
+    }
+    
+    private fun scheduleReEngagementNotification() {
+        // This would typically trigger a local notification or UI update
+        // The actual notification scheduling should be handled by the React Native layer
+        Log.d("AudioEngine", "Conversation paused - user should be notified to re-engage")
+        // The onAudioInterruptionCallback will inform the JS layer to handle UI updates
+    }
 
     @RequiresApi(Build.VERSION_CODES.Q)
     fun resumeRecordingAndPlayer() {
         requestAudioFocus()
         isRecording = toggleRecording(isRecordingBeforePause)
         audioTrack.play()
+    }
+
+    fun clearAudioQueue() {
+        audioSampleQueue.clear()
+        isPlaying = false
+        onOutputVolumeCallback?.invoke(0.0f)
+        Log.d("AudioEngine", "Audio queue cleared")
     }
 
     @SuppressLint("NewApi")
@@ -323,6 +378,13 @@ class AudioEngine (context: Context) {
         }
         executorServiceMicrophone.shutdownNow()
     }
+
+    // Background Audio Approach for Conversational AI:
+    // This implementation follows best practices by:
+    // 1. Not using background audio capability - bidirectional voice processing doesn't work reliably in background
+    // 2. Gracefully pausing conversations when interrupted - clears audio state and notifies user
+    // 3. Requiring manual resume - users must explicitly restart conversations for better UX
+    // 4. Following Android's audio focus guidelines - proper focus management without auto-resume
 
 
     private fun calculateRMSLevel(buffer: ByteArray): Float {
@@ -353,6 +415,20 @@ class AudioEngine (context: Context) {
         val adjustedValue = normalizedValue.pow(expFactor)
 
         return adjustedValue
+    }
+    
+    private fun calculateRawAudioLevel(buffer: ByteArray): Float {
+        var rawLevel = 0f
+        val sampleCount = buffer.size / 2
+        
+        for (i in 0 until sampleCount) {
+            // Combine two bytes into a 16-bit signed integer
+            val sample = (buffer[i * 2].toInt() or (buffer[i * 2 + 1].toInt() shl 8)).toShort()
+            // Normalize to -1.0 to 1.0 range and get absolute value
+            rawLevel += kotlin.math.abs(sample / 32768.0f)
+        }
+        
+        return rawLevel / sampleCount
     }
 
 }
