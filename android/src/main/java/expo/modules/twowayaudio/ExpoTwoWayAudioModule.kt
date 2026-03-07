@@ -23,8 +23,8 @@ class ExpoTwoWayAudioModule : Module() {
         AsyncFunction("initialize") { promise: Promise ->
             try {
                 if (audioEngine != null) {
-                    promise.resolve(true)
-                    return@AsyncFunction
+                    audioEngine?.tearDown()
+                    audioEngine = null
                 }
                 audioEngine = appContext.reactContext?.let { AudioEngine(it) }
                 setupCallbacks()
@@ -73,6 +73,18 @@ class ExpoTwoWayAudioModule : Module() {
 
          Function("clearAudioQueue") {
              audioEngine?.clearAudioQueue()
+         }
+
+         Function("stopPlayback") {
+             audioEngine?.stopPlayback()
+         }
+
+         Function("pausePlayback") {
+             audioEngine?.pausePlayback()
+         }
+
+         Function("resumePlayback") {
+             audioEngine?.resumePlayback()
          }
 
         Function("getMicrophoneModeIOS") {

@@ -1,151 +1,128 @@
-# Speechmatics Two Way Audio
+# Expo Two-Way Audio (Extended)
 
-Expo module for capturing and playing pcm audio data in react-native apps (iOS and Android).
+An extended Expo module for high-performance, bidirectional PCM audio capturing and playback, specifically optimized for real-time conversational AI (like Gemini Live).
 
-The aim of the module is to facilitate creating real-time conversational apps. The following features are provided:
+> [!NOTE]
+> This is an extended version of `@speechmatics/expo-two-way-audio` with critical fixes for development and additional playback controls.
 
-- Request audio recording permissions
-- Get clean (applying Acoustic Echo Cancelling) microphone samples in PCM format (1 channel 16 bit at 16kHz)
-- Play audio samples in PCM format (1 channel 16 bit at 24kHz). Playback happens through main speaker unless external audio sources are connected.
-- Provide volume level both for the input and output samples. Float between 0 and 1.
-- [iOS only] Get microphone mode and prompt user to select a microphone mode.
+## Key Features
 
-Check out our [examples/](./examples) to see the module in action.
+- **🚀 Hot Reload Resilient:** Fixed the common `IllegalArgumentException` on Android during development reloads.
+- **⏹️ Advanced Playback Control:** Stop, pause, and resume audio playback programmatically.
+- **🎙️ Clean Voice Input:** Built-in Acoustic Echo Cancellation (AEC) and noise suppression (16kHz PCM).
+- **🔊 High Quality Output:** Optimized for 24kHz PCM playback (ideal for modern LLM voice APIs).
+- **📊 Real-time Leveling:** Built-in volume meter for both input (mic) and output (speaker).
+- **✨ iOS Voice Isolation:** Supports toggling system-level voice isolation modes on iOS.
 
 ## Installation
 
-```
-npm i @speechmatics/expo-two-way-audio
-```
-
-## Usage
-
-Please check out our [examples/](./examples) to get full sample code.
-
-1. Request permissions for recording audio
-
-   ```JSX
-   import {useMicrophonePermissions} from "@speechmatics/expo-two-way-audio";
-
-   const [micPermission, requestMicPermission] = useMicrophonePermissions();
-   console.log(micPermission);
-   ```
-
-1. Initialize the module before calling any audio functionality.
-
-   ```JSX
-   useEffect(() => {
-       const initializeAudio = async () => {
-           await initialize();
-       };
-       initializeAudio();
-   }, []);
-
-   ```
-
-1. Play audio
-
-   > [!NOTE]
-   > The sample below uses the `buffer` module:
-   > `npm install buffer`
-
-   ```JSX
-    import { Buffer } from "buffer";
-
-    // As an example, let's play pcm data hardcoded in a variable.
-    // The examples/basic-usage does this. Check it out for real base64 data.
-    const audioChunk = "SOME PCM DATA BASE64 ENCODED HERE"
-    const buffer = Buffer.from(audioChunk, "base64");
-    const pcmData = new Uint8Array(buffer);
-    playPCMData(pcmData);
-   ```
-
-1. Get microphone samples
-
-   ```JSX
-   // Set up a function to deal with microphone sample events.
-   // In this case just print the data in the console.
-   useExpoTwoWayAudioEventListener(
-       "onMicrophoneData",
-       useCallback<MicrophoneDataCallback>((event) => {
-           console.log(`MIC DATA: ${event.data}`);
-       }, []),
-   );
-
-   // Unmute the microphone to get microphone data events
-   toggleRecording(true);
-   ```
-
-## Background Audio Handling
-
-This module is designed for **conversational AI applications** and follows best practices for background audio:
-
-### Why No Background Audio Capability?
-
-Unlike music or podcast apps, conversational AI requires:
-- **Bidirectional real-time processing** - Both recording and playback simultaneously
-- **Voice processing features** - Acoustic Echo Cancellation (AEC) and noise suppression
-- **Active user engagement** - Voice conversations naturally pause when users switch apps
-
-**Background audio doesn't work reliably for these use cases** because:
-- Voice processing (AEC/noise cancellation) gets disabled in background
-- Real-time audio processing becomes unreliable
-- Input taps may stop working
-- It doesn't fit Apple's intended background audio model
-
-### Recommended Approach ✅
-
-The module automatically handles interruptions gracefully:
-
-```jsx
-// Listen for audio interruptions
-useExpoTwoWayAudioEventListener(
-  "onAudioInterruption",
-  useCallback((event) => {
-    switch (event.data) {
-      case "began":
-        // Conversation paused - show user feedback
-        showNotification("🎙️ Conversation paused");
-        break;
-      case "ended":
-        // Show re-engagement prompt
-        showNotification("🔔 Tap to continue your conversation");
-        break;
-    }
-  }, []),
-);
-```
-
-**What happens when app goes to background:**
-1. Audio session interruption is detected
-2. Recording and playback are gracefully stopped
-3. Audio queue is cleared to prevent confusion
-4. User must manually restart the conversation
-
-This provides a **better user experience** than pretending background audio works when it doesn't.
-
-## Notes
-
-Some audio features of expo-two-way-audio like Acoustic Echo Cancelling, noise reduction or microphone modes (iOS) don't work on simulator. Run the example on a real device to test these features.
-
-### Dual Sample Rate Configuration
-
-This module uses different sample rates for input and output to optimize for both AEC performance and audio quality:
-- **Input (Microphone)**: 16kHz - Optimized for voice processing and AEC
-- **Output (Speaker)**: 24kHz - Higher quality playback (expects 24kHz input audio)
-
-The different sample rates help maintain low latency while providing better acoustic echo cancellation performance.
-
 ```bash
-# iOS
-npx expo run:ios --device --configuration Release
+# If using from your local fork/path
+npm install /path/to/expo-two-way-audio-extended
 
-# Android
-npx expo run:android --device --variant release
+# Ensure buffer is installed (required for PCM handling)
+npm install buffer
 ```
 
-For Android, the following permissions are needed: `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`. In Expo apps they can bee added in your `app.json` file:
+## Quick Start Guide
 
-```javascript
-expo.android.permissions: ["RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS"]
+### 1. Initialize the Module
+The module must be initialized once. In this extended version, re-initialization (e.g., during hot reload) is handled gracefully by tearing down stale audio engines automatically.
+
+```tsx
+import { initialize } from "expo-two-way-audio-extended";
+
+useEffect(() => {
+  initialize().then((success) => {
+    console.log("Audio Engine ready:", success);
+  });
+}, []);
 ```
+
+### 2. Play Audio with Playback Controls
+You can now stop or pause playback immediately—critical for "interruptible" AI conversations.
+
+```tsx
+import { playPCMData, stopPlayback, pausePlayback, resumePlayback, isPlaying } from "expo-two-way-audio-extended";
+import { Buffer } from "buffer";
+
+// To play a chunk of base64 PCM data:
+const playBuffer = (base64Data: string) => {
+  const pcmData = new Uint8Array(Buffer.from(base64Data, "base64"));
+  playPCMData(pcmData);
+};
+
+// To interrupt the AI:
+const onUserInterrupted = () => {
+  stopPlayback(); // Clears the queue and silences the speaker immediately
+};
+```
+
+### 3. Handle Microphone Data
+Toggle recording to start receiving PCM samples via the event listener.
+
+```tsx
+import { toggleRecording, useExpoTwoWayAudioEventListener } from "expo-two-way-audio-extended";
+
+// 1. Listen for data
+useExpoTwoWayAudioEventListener("onMicrophoneData", (event) => {
+  // event.data is the raw PCM chunk
+  sendToServer(event.data);
+});
+
+// 2. Start recording
+toggleRecording(true);
+```
+
+### 4. Audio Visualization
+Built-in volume levels allow for easy UI meters.
+
+```tsx
+useExpoTwoWayAudioEventListener("onInputVolumeLevelData", (event) => {
+  // event.data is a float [0, 1]
+  updateMicWaveform(event.data);
+});
+
+useExpoTwoWayAudioEventListener("onOutputVolumeLevelData", (event) => {
+  // event.data is a float [0, 1]
+  updateAIVoiceWaveform(event.data);
+});
+```
+
+## API Reference
+
+| Method | Description |
+| :--- | :--- |
+| `initialize()` | Standard setup. Safe to call multiple times (reloads). |
+| `playPCMData(data)` | Schedules a `Uint8Array` for playback. |
+| `stopPlayback()` | **New:** Stops active audio and clears all queued buffers. |
+| `pausePlayback()` | **New:** Pauses the player without clearing the queue. |
+| `resumePlayback()` | **New:** Resumes a paused player. |
+| `isPlaying()` | **New:** Returns boolean state of the speaker. |
+| `toggleRecording(bool)` | Mutes/Unmutes the microphone. |
+| `clearAudioQueue()` | Clears pending audio without stopping the hardware immediately. |
+| `tearDown()` | Fully releases audio hardware. |
+
+## Background Audio
+This module follows the **"Conversational UX"** pattern: 
+- Conversations pause when the app is backgrounded.
+- Interruptions (calls, alarms) are handled via the `onAudioInterruption` event.
+- It is recommended to prompt the user to "Tap to Resume" when returning to the app rather than auto-starting background audio, which is notoriously flaky for bidirectional AEC processing.
+
+## Platform Setup
+
+### Android
+Add these to your `app.json`:
+```json
+"expo": {
+  "android": {
+    "permissions": ["RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS"]
+  }
+}
+```
+
+### iOS
+The module handles `.playAndRecord` category with `.voiceChat` mode automatically for optimal AEC performance.
+
+---
+*Maintained as an extended version for enhanced developer experience and AI integration.*

@@ -365,6 +365,27 @@ class AudioEngine (context: Context) {
         Log.d("AudioEngine", "Audio queue cleared")
     }
 
+    fun stopPlayback() {
+        audioSampleQueue.clear()
+        audioTrack.pause()
+        audioTrack.flush()
+        isPlaying = false
+        onOutputVolumeCallback?.invoke(0.0f)
+        Log.d("AudioEngine", "Playback stopped")
+    }
+
+    fun pausePlayback() {
+        audioTrack.pause()
+        isPlaying = false
+        Log.d("AudioEngine", "Playback paused")
+    }
+
+    fun resumePlayback() {
+        audioTrack.play()
+        isPlaying = true
+        Log.d("AudioEngine", "Playback resumed")
+    }
+
     @SuppressLint("NewApi")
     fun tearDown() {
         stopRecording()

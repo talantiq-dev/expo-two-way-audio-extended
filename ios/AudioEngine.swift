@@ -328,6 +328,23 @@ class AudioEngine {
         updateOutputVolume()
         print("Audio queue cleared")
     }
+
+    func stopPlayback() {
+        speechPlayer.stop()
+        outputBuffer = [Float](repeating: 0, count: outputBuffer.count)
+        updateOutputVolume()
+        print("Playback stopped")
+    }
+
+    func pausePlayback() {
+        speechPlayer.pause()
+        print("Playback paused")
+    }
+
+    func resumePlayback() {
+        speechPlayer.play()
+        print("Playback resumed")
+    }
     
     private func checkEngineIsRunning() {
         if !avAudioEngine.isRunning {

@@ -26,7 +26,8 @@ public class ExpoTwoWayAudioModule: Module {
         AsyncFunction("initialize") { () -> Bool in
             do {
                 if self.audioEngine != nil {
-                    return true
+                    self.audioEngine?.tearDown()
+                    self.audioEngine = nil
                 }
                 self.audioEngine = try AudioEngine()
                 self.setupMicrophoneCallback()
@@ -122,6 +123,18 @@ public class ExpoTwoWayAudioModule: Module {
         
         Function("clearAudioQueue") {
             self.audioEngine?.clearAudioQueue()
+        }
+
+        Function("stopPlayback") {
+            self.audioEngine?.stopPlayback()
+        }
+
+        Function("pausePlayback") {
+            self.audioEngine?.pausePlayback()
+        }
+
+        Function("resumePlayback") {
+            self.audioEngine?.resumePlayback()
         }
 
         AsyncFunction("getMicrophonePermissionsAsync") { (promise: Promise) in
