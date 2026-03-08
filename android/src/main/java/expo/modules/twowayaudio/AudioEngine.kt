@@ -293,6 +293,7 @@ class AudioEngine (context: Context) {
     private fun playAudioFromSampleQueue() {
         executorServicePlayback.execute{
             isPlaying = true
+            audioTrack.play() // CRITICAL: Ensure track is in PLAYING state after a stop/pause
             try {
                 while (audioSampleQueue.isNotEmpty()){
                     val data = audioSampleQueue.poll()
