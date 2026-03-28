@@ -1,3 +1,3 @@
-export * from "./core";
-export * from "./events";
-export * from "./hooks";
+export * from "./core.js";
+export * from "./events.js";
+export * from "./hooks.js";
